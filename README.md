@@ -20,21 +20,49 @@ Minimalistički RAG demo za prezentaciju: upload → parse → save → chunk �
 - Node.js 20+
 - `GEMINI_API_KEY` u okruženju (ili `backend/.env`)
 
-## Pokretanje (hibridno)
+## Pokretanje
 
-### 1. Infra (Docker)
+### Opcija A — sve u Dockeru (preporučeno za demo)
 
 ```bash
-docker compose up -d
+# 1. API ključ (obavezno za /chat)
+cp .env.example .env
+# uredi .env i postavi GEMINI_API_KEY
+
+# 2. Podigni ceo stack (prvi build traje 10–20 min zbog ML modela)
+docker compose up --build -d
+
+# 3. Prati logove embedding servisa (modeli se skidaju pri prvom startu)
+docker compose logs -f embedding-service
+```
+
+Kada su svi servisi zdravi:
+
+| Servis | URL |
+|--------|-----|
+| UI | http://localhost:3000 |
+| Java API | http://localhost:8081 |
+| Embedding API | http://localhost:8002 |
+| RedisInsight | http://localhost:8001 |
+
+Zaustavi: `docker compose down`
+
+### Opcija B — hibridno (infra u Dockeru, kod lokalno)
+
+#### 1. Infra (Docker)
+
+```bash
+docker compose up -d postgres redis
 ```
 
 - Postgres: `localhost:5432` (db: `rag_demo`, user/pass: `rag`/`rag`)
 - Redis Stack: `localhost:7379`
 - RedisInsight UI: http://localhost:8001
 
-### 2. Python embedding servis
+#### 2. Python embedding servis
 
 ```bash
+
 cd embedding-service
 python -m venv .venv
 .venv\Scripts\activate          # Windows
@@ -44,9 +72,10 @@ set REDIS_URL=redis://localhost:7379
 uvicorn main:app --reload --port 8002
 ```
 
-Prvi start skida HuggingFace modele (~500MB).
+Prvi start skida HuggingFace modele (~500MB) i reranker (~2.3GB)
 
-### 3. Java backend
+
+#### 3. Java backend
 
 ```bash
 cd backend
@@ -56,7 +85,7 @@ gradlew.bat bootRun
 
 API: http://localhost:8080
 
-### 4. Next.js frontend
+#### 4. Next.js frontend
 
 ```bash
 cd frontend

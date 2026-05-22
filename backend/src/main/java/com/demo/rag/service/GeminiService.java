@@ -41,6 +41,7 @@ public class GeminiService {
         String apiKey = ragProperties.getGemini().getApiKey();
         if (apiKey == null || apiKey.isBlank()) {
             eventConsumer.accept(ChatEvent.error("GEMINI_API_KEY is not configured"));
+            eventConsumer.accept(ChatEvent.done());
             return;
         }
 
@@ -66,7 +67,8 @@ public class GeminiService {
             streamWithTools(client, model, List.of(userContent), config, eventConsumer);
         } catch (Exception e) {
             log.error("Gemini chat failed", e);
-            eventConsumer.accept(ChatEvent.error(e.getMessage()));
+            eventConsumer.accept(ChatEvent.error(e.getMessage() != null ? e.getMessage() : "Chat failed"));
+            eventConsumer.accept(ChatEvent.done());
         }
     }
 

@@ -1,33 +1,94 @@
 services:
   postgres:
     image: postgres:16-alpine
-    ports:
-      - "5432:5432"
     environment:
       POSTGRES_DB: rag_demo
       POSTGRES_USER: rag
       POSTGRES_PASSWORD: rag
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U rag -d rag_demo"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   redis:
     image: redis/redis-stack:latest
+    volumes:
+      - redis_data:/data
     ports:
       - "7379:6379"
       - "8001:8001"
-    volumes:
-      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+
+  embedding-service:
+    build:
+      context: ./embedding-service
+      dockerfile: Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      RERANKER_LOCAL_MODEL: BAAI/bge-reranker-v2-m3
+    volumes:
+      - huggingface_cache:/cache
+    ports:
+      - "8002:8002"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 15s
+      timeout: 10s
+      start_period: 300s
+      retries: 15
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      SERVER_PORT: 8081
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/rag_demo
+      SPRING_DATASOURCE_USERNAME: rag
+      SPRING_DATASOURCE_PASSWORD: rag
+      EMBEDDING_SERVICE_URL: http://embedding-service:8002
+      GEMINI_API_KEY: ####
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      embedding-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/api/documents"]
+      interval: 15s
+      timeout: 5s
+      start_period: 90s
+      retries: 10
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        BACKEND_URL: http://backend:8081
+    environment:
+      BACKEND_URL: http://backend:8081
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
 
 volumes:
   postgres_data:
   redis_data:
+  huggingface_cache:

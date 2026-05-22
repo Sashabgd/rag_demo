@@ -6,7 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-@RestControllerAdvice
+@RestControllerAdvice(assignableTypes = {DocumentController.class, SearchController.class})
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(IllegalArgumentException.class)
