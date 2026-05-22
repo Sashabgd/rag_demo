@@ -1,0 +1,15 @@
+{
+  "documents": [
+    {
+      "chunkId": 99,
+      "content": "test embedding content for RAG demo",
+      "metadata": {
+        "document_id": 1,
+        "chunk_id": 99,
+        "source": "test.txt",
+        "start_index": 0,
+        "end_index": 35
+      }
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: rag-demo-backend
+  datasource:
+    url: jdbc:postgresql://localhost:5432/rag_demo
+    username: rag
+    password: rag
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+server:
+  port: 8080
+
+rag:
+  embedding-service-url: ${EMBEDDING_SERVICE_URL:http://localhost:8002}
+  gemini:
+    api-key: ${GEMINI_API_KEY:}
+    model: gemini-2.5-flash
+
+logging:
+  level:
+    com.demo.rag: INFO

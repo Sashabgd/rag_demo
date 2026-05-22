@@ -1,0 +1,8 @@
+RAG Demo Test Document
+
+Ovo je test dokument za RAG pipeline demonstraciju.
+
+Paragraf o veštačkoj inteligenciji: Large Language Models mogu da koriste alate za pretragu dokumenata.
+Retrieval Augmented Generation (RAG) kombinuje vektorsku pretragu sa generisanjem odgovora.
+
+Ključne reči za pretragu: embedding, chunkovanje, Redis, Gemini, reranker.
