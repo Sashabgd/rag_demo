@@ -54,14 +54,14 @@ set GEMINI_API_KEY=your-key-here
 gradlew.bat bootRun
 ```
 
-API: http://localhost:8081
+API: http://localhost:8080
 
 ### 4. Next.js frontend
 
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run dev ili yarn dev
 ```
 
 UI: http://localhost:3000
