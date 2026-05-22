@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/ui/button';
@@ -35,25 +35,44 @@ export default function ChatPage() {
   const [expandedTools, setExpandedTools] = useState<Set<number>>(new Set());
   const abortRef = useRef<AbortController | null>(null);
 
+  useEffect(() => {
+    return () => abortRef.current?.abort();
+  }, []);
+
   const sendMessage = async () => {
     if (!input.trim() || streaming) return;
     const userMsg = input.trim();
     setInput('');
-    setMessages((prev) => [...prev, { role: 'user', content: userMsg }]);
-    setStreaming(true);
 
-    const assistantIdx = messages.length + 1;
-    setMessages((prev) => [...prev, { role: 'assistant', content: '', toolCalls: [], toolResults: [] }]);
-
+    // Prekini prethodni SSE ako je još aktivan (sprečava Broken pipe na backendu)
+    abortRef.current?.abort();
     abortRef.current = new AbortController();
+
+    let assistantIdx = -1;
+    setMessages((prev) => {
+      assistantIdx = prev.length + 1;
+      return [
+        ...prev,
+        { role: 'user', content: userMsg },
+        { role: 'assistant', content: '', toolCalls: [], toolResults: [] },
+      ];
+    });
+    setStreaming(true);
 
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+        },
         body: JSON.stringify({ message: userMsg }),
         signal: abortRef.current.signal,
       });
+
+      if (!response.ok) {
+        throw new Error(`Chat failed (${response.status})`);
+      }
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
@@ -78,30 +97,40 @@ export default function ChatPage() {
             const parsed = JSON.parse(raw) as { type: string; data: string };
             const { type, data } = parsed;
 
-            if (type === 'token') {
+            if (type === 'token' && data) {
               setMessages((prev) => {
+                const idx = assistantIdx >= 0 ? assistantIdx : prev.length - 1;
                 const copy = [...prev];
-                const msg = { ...copy[assistantIdx] };
+                const msg = { ...copy[idx] };
                 msg.content += data;
-                copy[assistantIdx] = msg;
+                copy[idx] = msg;
                 return copy;
               });
             } else if (type === 'tool_call') {
               const tc = JSON.parse(data) as ToolCallInfo;
               setMessages((prev) => {
+                const idx = assistantIdx >= 0 ? assistantIdx : prev.length - 1;
                 const copy = [...prev];
-                const msg = { ...copy[assistantIdx] };
+                const msg = { ...copy[idx] };
                 msg.toolCalls = [...(msg.toolCalls || []), tc];
-                copy[assistantIdx] = msg;
+                copy[idx] = msg;
                 return copy;
               });
             } else if (type === 'tool_result') {
               const tr = JSON.parse(data) as { data: ToolResultItem[] };
               setMessages((prev) => {
+                const idx = assistantIdx >= 0 ? assistantIdx : prev.length - 1;
                 const copy = [...prev];
-                const msg = { ...copy[assistantIdx] };
+                const msg = { ...copy[idx] };
                 msg.toolResults = tr.data || [];
-                copy[assistantIdx] = msg;
+                copy[idx] = msg;
+                return copy;
+              });
+            } else if (type === 'error') {
+              setMessages((prev) => {
+                const idx = assistantIdx >= 0 ? assistantIdx : prev.length - 1;
+                const copy = [...prev];
+                copy[idx] = { ...copy[idx], content: data || 'Greška' };
                 return copy;
               });
             }
@@ -111,16 +140,20 @@ export default function ChatPage() {
         }
       }
     } catch (e) {
-      if ((e as Error).name !== 'AbortError') {
-        setMessages((prev) => {
-          const copy = [...prev];
-          copy[assistantIdx] = {
-            role: 'assistant',
+      if ((e as Error).name === 'AbortError') {
+        return;
+      }
+      setMessages((prev) => {
+        const idx = assistantIdx >= 0 ? assistantIdx : prev.length - 1;
+        const copy = [...prev];
+        if (copy[idx]) {
+          copy[idx] = {
+            ...copy[idx],
             content: `Greška: ${e instanceof Error ? e.message : 'Unknown'}`,
           };
-          return copy;
-        });
-      }
+        }
+        return copy;
+      });
     } finally {
       setStreaming(false);
     }
