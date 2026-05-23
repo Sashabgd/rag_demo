@@ -35,7 +35,7 @@ import org.springframework.stereotype.Service;
 public class GeminiService {
 
     private static final String TOOL_NAME = "search_documents";
-    private static final int MAX_TOOL_ROUNDS = 2;
+    private static final int MAX_TOOL_CALLS = 5;
 
     private final RagProperties ragProperties;
     private final EmbeddingClient embeddingClient;
@@ -90,7 +90,7 @@ public class GeminiService {
     }
 
     /**
-     * Stream tokens in real time. First turn may trigger tool; final answer streams without tools.
+     * Stream tokens in real time. Supports multiple tool rounds while tools remain in config.
      */
     private void runChatTurn(
             Client client,
@@ -98,14 +98,8 @@ public class GeminiService {
             List<Content> contents,
             GenerateContentConfig config,
             Consumer<ChatEvent> eventConsumer,
-            int round,
+            int toolCallsSoFar,
             String rerankType) throws Exception {
-
-        if (round >= MAX_TOOL_ROUNDS) {
-            eventConsumer.accept(ChatEvent.error("Too many tool rounds"));
-            eventConsumer.accept(ChatEvent.done());
-            return;
-        }
 
         FunctionCall pendingCall = null;
         Content modelTurnContent = null;
@@ -141,7 +135,7 @@ public class GeminiService {
         }
 
         if (pendingCall != null) {
-            handleToolCall(client, model, contents, config, eventConsumer, pendingCall, modelTurnContent, round, rerankType);
+            handleToolCall(client, model, contents, config, eventConsumer, pendingCall, modelTurnContent, toolCallsSoFar, rerankType);
             return;
         }
 
@@ -162,8 +156,14 @@ public class GeminiService {
             Consumer<ChatEvent> eventConsumer,
             FunctionCall functionCall,
             Content modelTurnContent,
-            int round,
+            int toolCallsSoFar,
             String rerankType) throws Exception {
+
+        if (toolCallsSoFar >= MAX_TOOL_CALLS) {
+            eventConsumer.accept(ChatEvent.error("Too many tool calls"));
+            eventConsumer.accept(ChatEvent.done());
+            return;
+        }
 
         String fnName = functionCall.name().orElse(TOOL_NAME);
         Map<String, Object> args = functionCall.args().orElse(Map.of());
@@ -180,7 +180,7 @@ public class GeminiService {
             contents.add(Content.builder()
                     .role("model")
                     .parts(Part.builder()
-                            .text("Calling " + fnName + " with query: " + query)
+                            .functionCall(functionCall)
                             .build())
                     .build());
         }
@@ -195,9 +195,8 @@ public class GeminiService {
                         .build())
                 .build());
 
-        // Final answer: stream without tools (no second tool round; tokens arrive incrementally)
-        GenerateContentConfig answerConfig = GenerateContentConfig.builder().build();
-        streamTokens(client, model, contents, answerConfig, eventConsumer);
+        // Keep tools enabled so the model can call search_documents again if needed
+        runChatTurn(client, model, contents, config, eventConsumer, toolCallsSoFar + 1, rerankType);
     }
 
     private void streamTokens(

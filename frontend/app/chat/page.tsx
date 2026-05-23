@@ -91,7 +91,14 @@ export default function ChatPage() {
         setMessages((prev) => {
           const i = idx >= 0 ? idx : prev.length - 1;
           const copy = [...prev];
-          copy[i] = { ...copy[i], toolResults: tr.data || [] };
+          const existing = copy[i].toolResults || [];
+          const incoming = tr.data || [];
+          const seen = new Set(existing.map((r) => r.chunk_id ?? r.content));
+          const merged = [
+            ...existing,
+            ...incoming.filter((r) => !seen.has(r.chunk_id ?? r.content)),
+          ];
+          copy[i] = { ...copy[i], toolResults: merged };
           return copy;
         });
       } catch {
