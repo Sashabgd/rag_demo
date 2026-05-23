@@ -58,7 +58,7 @@ public class ChatController {
 
         Thread.startVirtualThread(() -> {
             try {
-                geminiService.chat(request.message(), event -> {
+                geminiService.chat(request.message(), request.rerankType(), event -> {
                     if (closed.get()) {
                         return;
                     }

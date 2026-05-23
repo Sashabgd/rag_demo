@@ -11,3 +11,4 @@ sentence_transformers==5.2.0
 langchain-huggingface==1.2.0
 numpy>=1.26.0,<2
 pydantic==2.13.4
+httpx==0.27.2

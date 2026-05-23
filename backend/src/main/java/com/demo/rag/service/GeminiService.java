@@ -41,7 +41,7 @@ public class GeminiService {
     private final EmbeddingClient embeddingClient;
     private final ObjectMapper objectMapper;
 
-    public void chat(String userMessage, Consumer<ChatEvent> eventConsumer) {
+    public void chat(String userMessage, String rerankType, Consumer<ChatEvent> eventConsumer) {
         String apiKey = ragProperties.getGemini().getApiKey();
         if (apiKey == null || apiKey.isBlank()) {
             eventConsumer.accept(ChatEvent.error("GEMINI_API_KEY is not configured"));
@@ -51,10 +51,12 @@ public class GeminiService {
 
         Client client = Client.builder().apiKey(apiKey).build();
         String model = ragProperties.getGemini().getModel();
+        String normalizedRerank = normalizeRerankType(rerankType);
 
         String systemPrompt = """
                 You are a helpful assistant with access to uploaded documents via the search_documents tool.
                 When the user asks about document content, always call search_documents first with a relevant query.
+                You can call multiple times to get relevant documents
                 Answer in the same language as the user. Cite information from retrieved chunks.
                 """;
 
@@ -68,12 +70,23 @@ public class GeminiService {
                 .build();
 
         try {
-            runChatTurn(client, model, new ArrayList<>(List.of(userContent)), config, eventConsumer, 0);
+            runChatTurn(client, model, new ArrayList<>(List.of(userContent)), config, eventConsumer, 0, normalizedRerank);
         } catch (Exception e) {
             log.error("Gemini chat failed", e);
             eventConsumer.accept(ChatEvent.error(e.getMessage() != null ? e.getMessage() : "Chat failed"));
             eventConsumer.accept(ChatEvent.done());
         }
+    }
+
+    private static String normalizeRerankType(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "LOCAL";
+        }
+        String upper = raw.trim().toUpperCase();
+        return switch (upper) {
+            case "NONE", "LOCAL", "COHERE" -> upper;
+            default -> "LOCAL";
+        };
     }
 
     /**
@@ -85,7 +98,8 @@ public class GeminiService {
             List<Content> contents,
             GenerateContentConfig config,
             Consumer<ChatEvent> eventConsumer,
-            int round) throws Exception {
+            int round,
+            String rerankType) throws Exception {
 
         if (round >= MAX_TOOL_ROUNDS) {
             eventConsumer.accept(ChatEvent.error("Too many tool rounds"));
@@ -127,7 +141,7 @@ public class GeminiService {
         }
 
         if (pendingCall != null) {
-            handleToolCall(client, model, contents, config, eventConsumer, pendingCall, modelTurnContent, round);
+            handleToolCall(client, model, contents, config, eventConsumer, pendingCall, modelTurnContent, round, rerankType);
             return;
         }
 
@@ -148,7 +162,8 @@ public class GeminiService {
             Consumer<ChatEvent> eventConsumer,
             FunctionCall functionCall,
             Content modelTurnContent,
-            int round) throws Exception {
+            int round,
+            String rerankType) throws Exception {
 
         String fnName = functionCall.name().orElse(TOOL_NAME);
         Map<String, Object> args = functionCall.args().orElse(Map.of());
@@ -156,7 +171,7 @@ public class GeminiService {
 
         eventConsumer.accept(ChatEvent.toolCall(fnName, query));
 
-        ImmutableMap<String, Object> toolResult = executeSearch(query);
+        ImmutableMap<String, Object> toolResult = executeSearch(query, rerankType);
         eventConsumer.accept(ChatEvent.toolResult(toolResult));
 
         if (modelTurnContent != null) {
@@ -266,8 +281,8 @@ public class GeminiService {
         }
     }
 
-    private ImmutableMap<String, Object> executeSearch(String query) {
-        SearchResponse searchResponse = embeddingClient.search(new SearchRequest(query, 5, true));
+    private ImmutableMap<String, Object> executeSearch(String query, String rerankType) {
+        SearchResponse searchResponse = embeddingClient.search(new SearchRequest(query, 5, rerankType));
         List<Map<String, Object>> items = searchResponse.results().stream()
                 .map(this::toToolResultItem)
                 .toList();

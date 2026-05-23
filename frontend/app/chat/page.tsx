@@ -10,6 +10,7 @@ import { Card, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Send, Search } from 'lucide-react';
 import { flushSseBuffer, parseSseBlocks, type SsePayload } from '@/lib/sse';
+import type { RerankType } from '@/lib/api';
 
 interface ToolCallInfo {
   name: string;
@@ -30,11 +31,18 @@ interface Message {
   toolResults?: ToolResultItem[];
 }
 
+const RERANK_OPTIONS: { value: RerankType; label: string }[] = [
+  { value: 'NONE', label: 'Bez reranka' },
+  { value: 'LOCAL', label: 'Lokalni (BGE)' },
+  { value: 'COHERE', label: 'Cohere' },
+];
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [expandedTools, setExpandedTools] = useState<Set<number>>(new Set());
+  const [rerankType, setRerankType] = useState<RerankType>('LOCAL');
   const abortRef = useRef<AbortController | null>(null);
   const assistantIdxRef = useRef(-1);
 
@@ -131,7 +139,7 @@ export default function ChatPage() {
           'Content-Type': 'application/json',
           Accept: 'text/event-stream',
         },
-        body: JSON.stringify({ message: userMsg }),
+        body: JSON.stringify({ message: userMsg, rerankType }),
         signal: controller.signal,
         cache: 'no-store',
       });
@@ -194,11 +202,28 @@ export default function ChatPage() {
 
   return (
     <div className="mx-auto flex h-[calc(100vh-4rem)] max-w-3xl flex-col gap-4">
-      <div>
-        <h1 className="text-2xl font-bold">Agentic RAG Chat</h1>
-        <p className="text-muted-foreground">
-          Gemini 2.5 Flash poziva <code className="text-xs">search_documents</code> tool
-        </p>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Agentic RAG Chat</h1>
+          <p className="text-muted-foreground">
+            Gemini 2.5 Flash poziva <code className="text-xs">search_documents</code> tool
+          </p>
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Reranker:</span>
+          <select
+            value={rerankType}
+            onChange={(e) => setRerankType(e.target.value as RerankType)}
+            disabled={streaming}
+            className="rounded-md border border-input bg-background px-2 py-1 text-sm"
+          >
+            {RERANK_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto rounded-lg border border-border p-4">

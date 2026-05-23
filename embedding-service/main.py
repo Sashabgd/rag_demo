@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from typing import Any, List
+from typing import Any, List, Literal
 
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
@@ -39,7 +39,7 @@ class EmbedResponse(BaseModel):
 class SearchRequest(BaseModel):
     query: str
     topK: int = 5
-    rerank: bool = True
+    rerankType: Literal["NONE", "LOCAL", "COHERE"] = "LOCAL"
 
 
 class SearchResultItem(BaseModel):
@@ -79,7 +79,7 @@ def embed(request: EmbedRequest):
 @app.post("/search", response_model=SearchResponse)
 def search(request: SearchRequest):
     service = get_service()
-    result = service.search(request.query, top_k=request.topK, rerank=request.rerank)
+    result = service.search(request.query, top_k=request.topK, rerank_type=request.rerankType)
     return SearchResponse(
         results=[SearchResultItem(**r) for r in result["results"]],
         rerankType=result.get("rerankType", "NONE"),

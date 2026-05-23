@@ -35,6 +35,9 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       RERANKER_LOCAL_MODEL: BAAI/bge-reranker-v2-m3
+      RERANK_API_TOKEN: ${RERANK_API_TOKEN:-}
+      RERANKER_COHERE_MODEL: ${RERANKER_COHERE_MODEL:-rerank-v4.0-pro}
+      RERANK_API_URL: ${RERANK_API_URL:-https://api.cohere.com/v1/rerank}
     volumes:
       - huggingface_cache:/cache
     ports:
@@ -59,7 +62,7 @@ services:
       SPRING_DATASOURCE_USERNAME: rag
       SPRING_DATASOURCE_PASSWORD: rag
       EMBEDDING_SERVICE_URL: http://embedding-service:8002
-      GEMINI_API_KEY: ####
+      GEMINI_API_KEY: ###
     ports:
       - "8081:8081"
     depends_on:

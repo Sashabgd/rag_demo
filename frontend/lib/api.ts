@@ -51,6 +51,8 @@ export interface SearchResultItem {
   score: number;
 }
 
+export type RerankType = 'NONE' | 'LOCAL' | 'COHERE';
+
 export interface SearchResponse {
   results: SearchResultItem[];
   rerankType: string;
@@ -79,8 +81,8 @@ export async function getDocument(id: number): Promise<DocumentDetail> {
 export async function searchDocuments(
   query: string,
   topK = 5,
-  rerank = true,
+  rerankType: RerankType = 'LOCAL',
 ): Promise<SearchResponse> {
-  const res = await httpClient.post<SearchResponse>('/api/search', { query, topK, rerank });
+  const res = await httpClient.post<SearchResponse>('/api/search', { query, topK, rerankType });
   return res.data;
 }

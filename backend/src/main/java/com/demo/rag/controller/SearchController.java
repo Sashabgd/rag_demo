@@ -19,6 +19,18 @@ public class SearchController {
     @PostMapping
     public SearchResponse search(@RequestBody SearchRequest request) {
         int topK = request.topK() > 0 ? request.topK() : 5;
-        return embeddingClient.search(new SearchRequest(request.query(), topK, request.rerank()));
+        String rerankType = normalizeRerankType(request.rerankType());
+        return embeddingClient.search(new SearchRequest(request.query(), topK, rerankType));
+    }
+
+    private static String normalizeRerankType(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "LOCAL";
+        }
+        String upper = raw.trim().toUpperCase();
+        return switch (upper) {
+            case "NONE", "LOCAL", "COHERE" -> upper;
+            default -> "LOCAL";
+        };
     }
 }
