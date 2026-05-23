@@ -77,7 +77,7 @@ public class GeminiService {
     }
 
     /**
-     * Turn 1: stream (detect tool call). After tool: non-stream final answer (avoids SDK stream JSON EOF bug).
+     * Stream tokens in real time. First turn may trigger tool; final answer streams without tools.
      */
     private void runChatTurn(
             Client client,
@@ -132,8 +132,8 @@ public class GeminiService {
         }
 
         if (!streamedText) {
-            // Stream ended without text — fallback to single non-stream response
-            generateAndEmit(client, model, contents, config, eventConsumer);
+            GenerateContentConfig answerOnly = GenerateContentConfig.builder().build();
+            streamTokens(client, model, contents, answerOnly, eventConsumer);
             return;
         }
 
@@ -180,22 +180,51 @@ public class GeminiService {
                         .build())
                 .build());
 
-        // Final answer: non-stream (stable; streaming often breaks after tool round)
-        generateAndEmit(client, model, contents, config, eventConsumer);
+        // Final answer: stream without tools (no second tool round; tokens arrive incrementally)
+        GenerateContentConfig answerConfig = GenerateContentConfig.builder().build();
+        streamTokens(client, model, contents, answerConfig, eventConsumer);
     }
 
-    private void generateAndEmit(
+    private void streamTokens(
             Client client,
             String model,
             List<Content> contents,
             GenerateContentConfig config,
             Consumer<ChatEvent> eventConsumer) {
 
-        GenerateContentResponse response = client.models.generateContent(model, contents, config);
-        String text = response.text();
-        if (text != null && !text.isBlank()) {
-            eventConsumer.accept(ChatEvent.token(text));
+        boolean anyToken = false;
+
+        try (ResponseStream<GenerateContentResponse> stream =
+                client.models.generateContentStream(model, contents, config)) {
+
+            Iterator<GenerateContentResponse> iterator = stream.iterator();
+            while (hasNextSafely(iterator)) {
+                GenerateContentResponse response = nextSafely(iterator);
+                if (response == null) {
+                    break;
+                }
+                if (Objects.nonNull(response.functionCalls()) && !response.functionCalls().isEmpty()) {
+                    log.debug("Unexpected tool call in answer stream, stopping");
+                    break;
+                }
+                String text = response.text();
+                if (text != null && !text.isBlank()) {
+                    anyToken = true;
+                    eventConsumer.accept(ChatEvent.token(text));
+                }
+            }
+        } catch (GenAiIOException e) {
+            log.warn("Gemini answer stream warning: {}", e.getMessage());
         }
+
+        if (!anyToken) {
+            GenerateContentResponse response = client.models.generateContent(model, contents, config);
+            String text = response.text();
+            if (text != null && !text.isBlank()) {
+                eventConsumer.accept(ChatEvent.token(text));
+            }
+        }
+
         eventConsumer.accept(ChatEvent.done());
     }
 

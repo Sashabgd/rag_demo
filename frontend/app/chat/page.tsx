@@ -1,13 +1,15 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Send, Search } from 'lucide-react';
+import { flushSseBuffer, parseSseBlocks, type SsePayload } from '@/lib/sse';
 
 interface ToolCallInfo {
   name: string;
@@ -34,23 +36,86 @@ export default function ChatPage() {
   const [streaming, setStreaming] = useState(false);
   const [expandedTools, setExpandedTools] = useState<Set<number>>(new Set());
   const abortRef = useRef<AbortController | null>(null);
+  const assistantIdxRef = useRef(-1);
 
   useEffect(() => {
     return () => abortRef.current?.abort();
   }, []);
+
+  const applyEvent = (payload: SsePayload) => {
+    const idx = assistantIdxRef.current;
+    const { type, data } = payload;
+
+    if (type === 'token' && data) {
+      flushSync(() => {
+        setMessages((prev) => {
+          const i = idx >= 0 ? idx : prev.length - 1;
+          if (i < 0 || !prev[i]) return prev;
+          const copy = [...prev];
+          copy[i] = { ...copy[i], content: copy[i].content + data };
+          return copy;
+        });
+      });
+      return;
+    }
+
+    if (type === 'tool_call') {
+      try {
+        const tc = JSON.parse(data) as ToolCallInfo;
+        setMessages((prev) => {
+          const i = idx >= 0 ? idx : prev.length - 1;
+          const copy = [...prev];
+          copy[i] = {
+            ...copy[i],
+            toolCalls: [...(copy[i].toolCalls || []), tc],
+          };
+          return copy;
+        });
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+
+    if (type === 'tool_result') {
+      try {
+        const tr = JSON.parse(data) as { data: ToolResultItem[] };
+        setMessages((prev) => {
+          const i = idx >= 0 ? idx : prev.length - 1;
+          const copy = [...prev];
+          copy[i] = { ...copy[i], toolResults: tr.data || [] };
+          return copy;
+        });
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+
+    if (type === 'error') {
+      setMessages((prev) => {
+        const i = idx >= 0 ? idx : prev.length - 1;
+        const copy = [...prev];
+        copy[i] = { ...copy[i], content: data || 'Greška' };
+        return copy;
+      });
+    }
+
+    // type === 'done' — stream finished normally
+  };
 
   const sendMessage = async () => {
     if (!input.trim() || streaming) return;
     const userMsg = input.trim();
     setInput('');
 
-    // Prekini prethodni SSE ako je još aktivan (sprečava Broken pipe na backendu)
     abortRef.current?.abort();
-    abortRef.current = new AbortController();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
-    let assistantIdx = -1;
+    assistantIdxRef.current = -1;
     setMessages((prev) => {
-      assistantIdx = prev.length + 1;
+      assistantIdxRef.current = prev.length + 1;
       return [
         ...prev,
         { role: 'user', content: userMsg },
@@ -67,7 +132,8 @@ export default function ChatPage() {
           Accept: 'text/event-stream',
         },
         body: JSON.stringify({ message: userMsg }),
-        signal: abortRef.current.signal,
+        signal: controller.signal,
+        cache: 'no-store',
       });
 
       if (!response.ok) {
@@ -80,63 +146,30 @@ export default function ChatPage() {
 
       let buffer = '';
 
+      const drainBuffer = (final: boolean) => {
+        if (final) {
+          const tailEvents = flushSseBuffer(buffer);
+          buffer = '';
+          tailEvents.forEach(applyEvent);
+          return;
+        }
+        const { events, rest } = parseSseBlocks(buffer);
+        buffer = rest;
+        events.forEach(applyEvent);
+      };
+
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
 
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+        if (value) {
+          buffer += decoder.decode(value, { stream: true });
+          drainBuffer(false);
+        }
 
-        for (const line of lines) {
-          if (!line.startsWith('data:')) continue;
-          const raw = line.slice(5).trim();
-          if (!raw || raw === '[DONE]') continue;
-
-          try {
-            const parsed = JSON.parse(raw) as { type: string; data: string };
-            const { type, data } = parsed;
-
-            if (type === 'token' && data) {
-              setMessages((prev) => {
-                const idx = assistantIdx >= 0 ? assistantIdx : prev.length - 1;
-                const copy = [...prev];
-                const msg = { ...copy[idx] };
-                msg.content += data;
-                copy[idx] = msg;
-                return copy;
-              });
-            } else if (type === 'tool_call') {
-              const tc = JSON.parse(data) as ToolCallInfo;
-              setMessages((prev) => {
-                const idx = assistantIdx >= 0 ? assistantIdx : prev.length - 1;
-                const copy = [...prev];
-                const msg = { ...copy[idx] };
-                msg.toolCalls = [...(msg.toolCalls || []), tc];
-                copy[idx] = msg;
-                return copy;
-              });
-            } else if (type === 'tool_result') {
-              const tr = JSON.parse(data) as { data: ToolResultItem[] };
-              setMessages((prev) => {
-                const idx = assistantIdx >= 0 ? assistantIdx : prev.length - 1;
-                const copy = [...prev];
-                const msg = { ...copy[idx] };
-                msg.toolResults = tr.data || [];
-                copy[idx] = msg;
-                return copy;
-              });
-            } else if (type === 'error') {
-              setMessages((prev) => {
-                const idx = assistantIdx >= 0 ? assistantIdx : prev.length - 1;
-                const copy = [...prev];
-                copy[idx] = { ...copy[idx], content: data || 'Greška' };
-                return copy;
-              });
-            }
-          } catch {
-            // skip malformed SSE lines
-          }
+        if (done) {
+          buffer += decoder.decode();
+          drainBuffer(true);
+          break;
         }
       }
     } catch (e) {
@@ -144,11 +177,11 @@ export default function ChatPage() {
         return;
       }
       setMessages((prev) => {
-        const idx = assistantIdx >= 0 ? assistantIdx : prev.length - 1;
+        const i = assistantIdxRef.current >= 0 ? assistantIdxRef.current : prev.length - 1;
         const copy = [...prev];
-        if (copy[idx]) {
-          copy[idx] = {
-            ...copy[idx],
+        if (copy[i]) {
+          copy[i] = {
+            ...copy[i],
             content: `Greška: ${e instanceof Error ? e.message : 'Unknown'}`,
           };
         }
@@ -204,6 +237,7 @@ export default function ChatPage() {
               {msg.role === 'assistant' && msg.toolResults && msg.toolResults.length > 0 && (
                 <div className="mb-2">
                   <button
+                    type="button"
                     className="text-xs text-primary underline"
                     onClick={() =>
                       setExpandedTools((s) => {
@@ -256,7 +290,7 @@ export default function ChatPage() {
           placeholder="Pitaj nešto o dokumentu..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+          onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
           disabled={streaming}
         />
         <Button onClick={sendMessage} disabled={streaming || !input.trim()}>
