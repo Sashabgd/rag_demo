@@ -4,7 +4,6 @@ backend/build/
 backend/bin/
 backend/out/
 *.class
-*.jar
 *.war
 *.ear
 hs_err_pid*
