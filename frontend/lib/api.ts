@@ -86,3 +86,41 @@ export async function searchDocuments(
   const res = await httpClient.post<SearchResponse>('/api/search', { query, topK, rerankType });
   return res.data;
 }
+
+export interface CustomModel {
+  id: number;
+  name: string;
+  baseUrl: string;
+  modelName: string;
+  hasApiKey: boolean;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomModelInput {
+  name: string;
+  baseUrl: string;
+  modelName: string;
+  apiKey?: string;
+  enabled?: boolean;
+}
+
+export async function listModels(): Promise<CustomModel[]> {
+  const res = await httpClient.get<CustomModel[]>('/api/models');
+  return res.data;
+}
+
+export async function createModel(input: CustomModelInput): Promise<CustomModel> {
+  const res = await httpClient.post<CustomModel>('/api/models', input);
+  return res.data;
+}
+
+export async function updateModel(id: number, input: CustomModelInput): Promise<CustomModel> {
+  const res = await httpClient.put<CustomModel>(`/api/models/${id}`, input);
+  return res.data;
+}
+
+export async function deleteModel(id: number): Promise<void> {
+  await httpClient.delete(`/api/models/${id}`);
+}

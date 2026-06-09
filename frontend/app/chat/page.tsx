@@ -10,7 +10,7 @@ import { Card, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Send, Search } from 'lucide-react';
 import { flushSseBuffer, parseSseBlocks, type SsePayload } from '@/lib/sse';
-import type { RerankType } from '@/lib/api';
+import { listModels, type CustomModel, type RerankType } from '@/lib/api';
 
 interface ToolCallInfo {
   name: string;
@@ -43,12 +43,25 @@ export default function ChatPage() {
   const [streaming, setStreaming] = useState(false);
   const [expandedTools, setExpandedTools] = useState<Set<number>>(new Set());
   const [rerankType, setRerankType] = useState<RerankType>('LOCAL');
+  const [customModels, setCustomModels] = useState<CustomModel[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>('gemini');
   const abortRef = useRef<AbortController | null>(null);
   const assistantIdxRef = useRef(-1);
 
   useEffect(() => {
     return () => abortRef.current?.abort();
   }, []);
+
+  useEffect(() => {
+    listModels()
+      .then((models) => setCustomModels(models.filter((m) => m.enabled)))
+      .catch(() => setCustomModels([]));
+  }, []);
+
+  const selectedModelLabel =
+    selectedModel === 'gemini'
+      ? 'Gemini 2.5 Flash'
+      : customModels.find((m) => `custom:${m.id}` === selectedModel)?.name ?? 'Custom model';
 
   const applyEvent = (payload: SsePayload) => {
     const idx = assistantIdxRef.current;
@@ -139,6 +152,10 @@ export default function ChatPage() {
     });
     setStreaming(true);
 
+    const isCustom = selectedModel.startsWith('custom:');
+    const provider = isCustom ? 'custom' : 'gemini';
+    const modelId = isCustom ? Number(selectedModel.slice('custom:'.length)) : null;
+
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -146,7 +163,7 @@ export default function ChatPage() {
           'Content-Type': 'application/json',
           Accept: 'text/event-stream',
         },
-        body: JSON.stringify({ message: userMsg, rerankType }),
+        body: JSON.stringify({ message: userMsg, rerankType, provider, modelId }),
         signal: controller.signal,
         cache: 'no-store',
       });
@@ -213,24 +230,43 @@ export default function ChatPage() {
         <div>
           <h1 className="text-2xl font-bold">Agentic RAG Chat</h1>
           <p className="text-muted-foreground">
-            Gemini 2.5 Flash poziva <code className="text-xs">search_documents</code> tool
+            <span className="font-medium">{selectedModelLabel}</span> poziva{' '}
+            <code className="text-xs">search_documents</code> tool
           </p>
         </div>
-        <label className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">Reranker:</span>
-          <select
-            value={rerankType}
-            onChange={(e) => setRerankType(e.target.value as RerankType)}
-            disabled={streaming}
-            className="rounded-md border border-input bg-background px-2 py-1 text-sm"
-          >
-            {RERANK_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">Model:</span>
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              disabled={streaming}
+              className="rounded-md border border-input bg-background px-2 py-1 text-sm"
+            >
+              <option value="gemini">Gemini (2.5 Flash)</option>
+              {customModels.map((model) => (
+                <option key={model.id} value={`custom:${model.id}`}>
+                  {model.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">Reranker:</span>
+            <select
+              value={rerankType}
+              onChange={(e) => setRerankType(e.target.value as RerankType)}
+              disabled={streaming}
+              className="rounded-md border border-input bg-background px-2 py-1 text-sm"
+            >
+              {RERANK_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto rounded-lg border border-border p-4">

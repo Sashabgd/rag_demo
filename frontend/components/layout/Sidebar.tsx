@@ -9,6 +9,7 @@ import {
   Search,
   MessageSquare,
   GitBranch,
+  Server,
 } from 'lucide-react';
 
 const links = [
@@ -17,6 +18,7 @@ const links = [
   { href: '/documents', label: 'Documents', icon: FileText },
   { href: '/search', label: 'Search', icon: Search },
   { href: '/chat', label: 'Chat', icon: MessageSquare },
+  { href: '/models', label: 'Models', icon: Server },
 ];
 
 export function Sidebar() {

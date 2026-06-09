@@ -1,13 +1,17 @@
 package com.demo.rag.controller;
 
 import com.demo.rag.dto.ChatRequest;
+import com.demo.rag.entity.CustomModel;
+import com.demo.rag.service.ChatEvent;
+import com.demo.rag.service.CustomModelService;
 import com.demo.rag.service.GeminiService;
-import com.demo.rag.service.GeminiService.ChatEvent;
+import com.demo.rag.service.OpenAiChatService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.catalina.connector.ClientAbortException;
@@ -28,6 +32,8 @@ public class ChatController {
     private static final long SSE_TIMEOUT_MS = 5 * 60 * 1000L;
 
     private final GeminiService geminiService;
+    private final OpenAiChatService openAiChatService;
+    private final CustomModelService customModelService;
     private final ObjectMapper objectMapper;
 
     @PostMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -58,7 +64,7 @@ public class ChatController {
 
         Thread.startVirtualThread(() -> {
             try {
-                geminiService.chat(request.message(), request.rerankType(), event -> {
+                Consumer<ChatEvent> consumer = event -> {
                     if (closed.get()) {
                         return;
                     }
@@ -68,7 +74,18 @@ public class ChatController {
                     if ("done".equals(event.type()) || "error".equals(event.type())) {
                         closeQuietly.run();
                     }
-                });
+                };
+
+                if (isCustomProvider(request)) {
+                    CustomModel model = customModelService.getById(request.modelId());
+                    if (!model.isEnabled()) {
+                        throw new IllegalStateException("Model '" + model.getName() + "' is disabled");
+                    }
+                    openAiChatService.chat(request.message(), request.rerankType(), model, consumer);
+                } else {
+                    geminiService.chat(request.message(), request.rerankType(), consumer);
+                }
+
                 if (!closed.get()) {
                     closeQuietly.run();
                 }
@@ -88,6 +105,10 @@ public class ChatController {
         });
 
         return emitter;
+    }
+
+    private static boolean isCustomProvider(ChatRequest request) {
+        return "custom".equalsIgnoreCase(request.provider()) && request.modelId() != null;
     }
 
     private boolean sendEventSafe(SseEmitter emitter, ChatEvent event, AtomicBoolean closed) {

@@ -1,10 +1,6 @@
 package com.demo.rag.service;
 
 import com.demo.rag.config.RagProperties;
-import com.demo.rag.dto.SearchRequest;
-import com.demo.rag.dto.SearchResponse;
-import com.demo.rag.dto.SearchResultItem;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.genai.Client;
@@ -19,7 +15,6 @@ import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.Part;
 import com.google.genai.types.Tool;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -34,12 +29,10 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class GeminiService {
 
-    private static final String TOOL_NAME = "search_documents";
     private static final int MAX_TOOL_CALLS = 5;
 
     private final RagProperties ragProperties;
-    private final EmbeddingClient embeddingClient;
-    private final ObjectMapper objectMapper;
+    private final DocumentSearchTool searchTool;
 
     public void chat(String userMessage, String rerankType, Consumer<ChatEvent> eventConsumer) {
         String apiKey = ragProperties.getGemini().getApiKey();
@@ -51,7 +44,7 @@ public class GeminiService {
 
         Client client = Client.builder().apiKey(apiKey).build();
         String model = ragProperties.getGemini().getModel();
-        String normalizedRerank = normalizeRerankType(rerankType);
+        String normalizedRerank = DocumentSearchTool.normalizeRerankType(rerankType);
 
         String systemPrompt = """
                 You are a helpful assistant with access to uploaded documents via the search_documents tool.
@@ -76,17 +69,6 @@ public class GeminiService {
             eventConsumer.accept(ChatEvent.error(e.getMessage() != null ? e.getMessage() : "Chat failed"));
             eventConsumer.accept(ChatEvent.done());
         }
-    }
-
-    private static String normalizeRerankType(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return "LOCAL";
-        }
-        String upper = raw.trim().toUpperCase();
-        return switch (upper) {
-            case "NONE", "LOCAL", "COHERE" -> upper;
-            default -> "LOCAL";
-        };
     }
 
     /**
@@ -165,13 +147,13 @@ public class GeminiService {
             return;
         }
 
-        String fnName = functionCall.name().orElse(TOOL_NAME);
+        String fnName = functionCall.name().orElse(DocumentSearchTool.TOOL_NAME);
         Map<String, Object> args = functionCall.args().orElse(Map.of());
-        String query = extractQuery(args);
+        String query = DocumentSearchTool.extractQuery(args);
 
         eventConsumer.accept(ChatEvent.toolCall(fnName, query));
 
-        ImmutableMap<String, Object> toolResult = executeSearch(query, rerankType);
+        ImmutableMap<String, Object> toolResult = searchTool.search(query, rerankType);
         eventConsumer.accept(ChatEvent.toolResult(toolResult));
 
         if (modelTurnContent != null) {
@@ -189,7 +171,7 @@ public class GeminiService {
                 .role("user")
                 .parts(Part.builder()
                         .functionResponse(FunctionResponse.builder()
-                                .name(functionCall.name().orElse(TOOL_NAME))
+                                .name(functionCall.name().orElse(DocumentSearchTool.TOOL_NAME))
                                 .response(toolResult)
                                 .build())
                         .build())
@@ -242,14 +224,6 @@ public class GeminiService {
         eventConsumer.accept(ChatEvent.done());
     }
 
-    private static String extractQuery(Map<String, Object> args) {
-        Object query = args.get("query");
-        if (query == null) {
-            query = args.get("prompt_query");
-        }
-        return query != null ? String.valueOf(query) : "";
-    }
-
     private static boolean hasNextSafely(Iterator<GenerateContentResponse> iterator) {
         try {
             return iterator.hasNext();
@@ -280,30 +254,6 @@ public class GeminiService {
         }
     }
 
-    private ImmutableMap<String, Object> executeSearch(String query, String rerankType) {
-        SearchResponse searchResponse = embeddingClient.search(new SearchRequest(query, 5, rerankType));
-        List<Map<String, Object>> items = searchResponse.results().stream()
-                .map(this::toToolResultItem)
-                .toList();
-        Map<String, Object> result = new HashMap<>();
-        result.put("data", items);
-        result.put("rerank_type", searchResponse.rerankType() != null ? searchResponse.rerankType() : "NONE");
-        result.put("count", items.size());
-        return ImmutableMap.copyOf(result);
-    }
-
-    private Map<String, Object> toToolResultItem(SearchResultItem item) {
-        Map<String, Object> map = new HashMap<>();
-        map.put("content", item.content() != null ? item.content() : "");
-        map.put("source", item.source() != null ? item.source() : "");
-        map.put("document_id", item.documentId() != null ? item.documentId() : 0);
-        map.put("chunk_id", item.chunkId() != null ? item.chunkId() : 0);
-        map.put("score", item.score());
-        map.put("start_index", item.startIndex() != null ? item.startIndex() : 0);
-        map.put("end_index", item.endIndex() != null ? item.endIndex() : 0);
-        return map;
-    }
-
     private Tool buildSearchTool() {
         ImmutableMap<String, Object> parametersSchema = ImmutableMap.of(
                 "type", "object",
@@ -318,41 +268,10 @@ public class GeminiService {
 
         return Tool.builder()
                 .functionDeclarations(FunctionDeclaration.builder()
-                        .name(TOOL_NAME)
-                        .description("Search uploaded documents semantically. Use when the user asks about document content.")
+                        .name(DocumentSearchTool.TOOL_NAME)
+                        .description(DocumentSearchTool.TOOL_DESCRIPTION)
                         .parametersJsonSchema(parametersSchema)
                         .build())
                 .build();
-    }
-
-    public record ChatEvent(String type, String data) {
-        public static ChatEvent token(String text) {
-            return new ChatEvent("token", text);
-        }
-
-        public static ChatEvent toolCall(String name, String query) {
-            try {
-                return new ChatEvent("tool_call", new ObjectMapper().writeValueAsString(
-                        Map.of("name", name, "query", query)));
-            } catch (Exception e) {
-                return new ChatEvent("tool_call", "{\"name\":\"" + name + "\",\"query\":\"" + query + "\"}");
-            }
-        }
-
-        public static ChatEvent toolResult(ImmutableMap<String, Object> result) {
-            try {
-                return new ChatEvent("tool_result", new ObjectMapper().writeValueAsString(result));
-            } catch (Exception e) {
-                return new ChatEvent("tool_result", "{}");
-            }
-        }
-
-        public static ChatEvent done() {
-            return new ChatEvent("done", "");
-        }
-
-        public static ChatEvent error(String message) {
-            return new ChatEvent("error", message);
-        }
     }
 }
