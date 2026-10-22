@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import axios from 'axios';
 import {
   listModels,
   createModel,
   updateModel,
   deleteModel,
+  extractError,
   type CustomModel,
   type CustomModelInput,
 } from '@/lib/api';
@@ -23,13 +23,6 @@ const EMPTY_FORM: CustomModelInput = {
   apiKey: '',
   enabled: true,
 };
-
-function extractError(e: unknown): string {
-  if (axios.isAxiosError(e)) {
-    return (e.response?.data as { error?: string } | undefined)?.error || e.message;
-  }
-  return e instanceof Error ? e.message : 'Nepoznata greška';
-}
 
 export default function ModelsPage() {
   const [models, setModels] = useState<CustomModel[]>([]);

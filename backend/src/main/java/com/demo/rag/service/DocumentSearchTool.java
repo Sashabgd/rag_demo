@@ -25,6 +25,7 @@ public class DocumentSearchTool {
     private static final int DEFAULT_TOP_K = 5;
 
     private final EmbeddingClient embeddingClient;
+    private final EmbeddingModelService embeddingModelService;
 
     public static String normalizeRerankType(String raw) {
         if (raw == null || raw.isBlank()) {
@@ -50,7 +51,7 @@ public class DocumentSearchTool {
 
     public ImmutableMap<String, Object> search(String query, String rerankType) {
         SearchResponse searchResponse = embeddingClient.search(
-                new SearchRequest(query, DEFAULT_TOP_K, rerankType));
+                new SearchRequest(query, DEFAULT_TOP_K, rerankType, embeddingModelService.resolveActive()));
         List<Map<String, Object>> items = searchResponse.results().stream()
                 .map(DocumentSearchTool::toToolResultItem)
                 .toList();

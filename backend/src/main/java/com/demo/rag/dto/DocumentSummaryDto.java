@@ -10,5 +10,6 @@ public record DocumentSummaryDto(
         Long fileSize,
         DocumentStatus status,
         Instant uploadedAt,
-        int chunkCount
+        int chunkCount,
+        String embeddingModel
 ) {}

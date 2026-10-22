@@ -43,4 +43,18 @@ public class EmbeddingClient {
                 .retrieve()
                 .body(SearchResponse.class);
     }
+
+    public void deleteDocument(String indexName, Long documentId) {
+        restClient.delete()
+                .uri(uri -> uri.path("/documents/{id}").queryParam("index", indexName).build(documentId))
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    public void deleteAll() {
+        restClient.delete()
+                .uri("/documents")
+                .retrieve()
+                .toBodilessEntity();
+    }
 }

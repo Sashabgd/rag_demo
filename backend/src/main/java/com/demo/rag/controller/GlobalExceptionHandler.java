@@ -11,7 +11,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice(assignableTypes = {
         DocumentController.class,
         SearchController.class,
-        CustomModelController.class
+        CustomModelController.class,
+        EmbeddingModelController.class
 })
 public class GlobalExceptionHandler {
 

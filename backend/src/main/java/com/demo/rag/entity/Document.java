@@ -49,4 +49,10 @@ public class Document {
 
     @Column(name = "embedded_at")
     private Instant embeddedAt;
+
+    @Column(name = "embedding_model", length = 255)
+    private String embeddingModel;
+
+    @Column(name = "embedding_index", length = 255)
+    private String embeddingIndex;
 }

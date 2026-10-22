@@ -5,6 +5,7 @@ import com.demo.rag.dto.DocumentSummaryDto;
 import com.demo.rag.entity.Document;
 import com.demo.rag.entity.DocumentStatus;
 import com.demo.rag.repository.DocumentRepository;
+import com.demo.rag.service.DocumentDeleteService;
 import com.demo.rag.service.DocumentIngestService;
 import com.demo.rag.service.DocumentQueryService;
 import java.io.IOException;
@@ -13,6 +14,7 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -29,6 +31,7 @@ public class DocumentController {
     private final DocumentRepository documentRepository;
     private final DocumentIngestService ingestService;
     private final DocumentQueryService queryService;
+    private final DocumentDeleteService deleteService;
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<DocumentSummaryDto> upload(@RequestParam("file") MultipartFile file) throws IOException {
@@ -56,7 +59,8 @@ public class DocumentController {
                 doc.getFileSize(),
                 doc.getStatus(),
                 doc.getUploadedAt(),
-                0
+                0,
+                null
         ));
     }
 
@@ -68,6 +72,18 @@ public class DocumentController {
     @GetMapping("/{id}")
     public DocumentDetailDto detail(@PathVariable Long id) {
         return queryService.getDetail(id);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        deleteService.delete(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping
+    public ResponseEntity<Void> deleteAll() {
+        deleteService.deleteAll();
+        return ResponseEntity.noContent().build();
     }
 
     private static String getExtension(String filename) {

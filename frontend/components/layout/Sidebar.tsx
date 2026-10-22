@@ -10,6 +10,7 @@ import {
   MessageSquare,
   GitBranch,
   Server,
+  Layers,
 } from 'lucide-react';
 
 const links = [
@@ -19,6 +20,7 @@ const links = [
   { href: '/search', label: 'Search', icon: Search },
   { href: '/chat', label: 'Chat', icon: MessageSquare },
   { href: '/models', label: 'Models', icon: Server },
+  { href: '/embeddings', label: 'Embeddings', icon: Layers },
 ];
 
 export function Sidebar() {

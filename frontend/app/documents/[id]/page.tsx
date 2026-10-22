@@ -1,10 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
-import { getDocument, type DocumentDetail, type DocumentStatus } from '@/lib/api';
+import { useParams, useRouter } from 'next/navigation';
+import {
+  getDocument,
+  deleteDocument,
+  extractError,
+  type DocumentDetail,
+  type DocumentStatus,
+} from '@/lib/api';
 import { StageCard, statusBadge, type StageState } from '@/components/pipeline/StageCard';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Trash2 } from 'lucide-react';
 
 const STATUS_ORDER: DocumentStatus[] = ['UPLOADED', 'PARSED', 'CHUNKED', 'EMBEDDED'];
 
@@ -20,8 +28,11 @@ function stageState(current: DocumentStatus, minDone: DocumentStatus, activeAt?:
 
 export default function DocumentDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = Number(params.id);
   const [doc, setDoc] = useState<DocumentDetail | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -37,14 +48,39 @@ export default function DocumentDetailPage() {
 
   const s = doc.status;
 
+  const remove = async () => {
+    if (!window.confirm(`Obrisati dokument "${doc.name}"? Briše se iz baze i iz Redisa.`)) return;
+    setError(null);
+    setDeleting(true);
+    try {
+      await deleteDocument(doc.id);
+      router.push('/documents');
+    } catch (e) {
+      setError(extractError(e));
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold">{doc.name}</h1>
-        <p className="text-muted-foreground">
-          Pipeline status: {statusBadge(s)}
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">{doc.name}</h1>
+          <p className="text-muted-foreground">
+            Pipeline status: {statusBadge(s)}
+          </p>
+        </div>
+        <Button variant="outline" onClick={remove} disabled={deleting}>
+          <Trash2 className="mr-1 h-4 w-4 text-red-600" />
+          Obriši
+        </Button>
       </div>
+
+      {error && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       <StageCard
         step={1}
@@ -125,7 +161,7 @@ export default function DocumentDetailPage() {
       <StageCard
         step={5}
         title="Embedovanje u Redis"
-        description="e5-small → Redis Stack index rag_demo"
+        description={`${doc.embeddingModel ?? 'e5-small'} → Redis Stack index ${doc.embeddingIndex ?? 'rag_demo'}`}
         state={stageState(s, 'EMBEDDED', 'CHUNKED')}
       >
         {doc.chunks.some((c) => c.vectorStoreId) && (

@@ -3,7 +3,7 @@ package com.demo.rag.dto;
 import java.util.List;
 import java.util.Map;
 
-public record EmbedRequest(List<EmbedDocumentItem> documents) {
+public record EmbedRequest(List<EmbedDocumentItem> documents, EmbeddingConfig embedding) {
 
     public record EmbedDocumentItem(
             Long chunkId,

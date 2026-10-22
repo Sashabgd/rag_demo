@@ -30,7 +30,8 @@ public class DocumentQueryService {
                         doc.getFileSize(),
                         doc.getStatus(),
                         doc.getUploadedAt(),
-                        chunkRepository.findByDocumentIdOrderByStartIndexAsc(doc.getId()).size()
+                        chunkRepository.findByDocumentIdOrderByStartIndexAsc(doc.getId()).size(),
+                        doc.getEmbeddingModel()
                 ))
                 .toList();
     }
@@ -64,6 +65,8 @@ public class DocumentQueryService {
                 doc.getParsedAt(),
                 doc.getChunkedAt(),
                 doc.getEmbeddedAt(),
+                doc.getEmbeddingModel(),
+                doc.getEmbeddingIndex(),
                 textLength,
                 textPreview,
                 chunkDtos

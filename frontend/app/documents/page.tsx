@@ -1,22 +1,69 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import Link from 'next/link';
-import { listDocuments, type DocumentSummary } from '@/lib/api';
+import {
+  listDocuments,
+  deleteDocument,
+  deleteAllDocuments,
+  extractError,
+  type DocumentSummary,
+} from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { statusBadge } from '@/components/pipeline/StageCard';
 import { Button } from '@/components/ui/button';
-import { FileText } from 'lucide-react';
+import { FileText, Trash2 } from 'lucide-react';
 
 export default function DocumentsPage() {
   const [docs, setDocs] = useState<DocumentSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true);
     listDocuments()
       .then(setDocs)
+      .catch((e) => setError(extractError(e)))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    load();
   }, []);
+
+  const remove = async (e: MouseEvent, doc: DocumentSummary) => {
+    // The card is wrapped in a Link; don't navigate to the detail page.
+    e.preventDefault();
+    e.stopPropagation();
+    if (!window.confirm(`Obrisati dokument "${doc.name}"? Briše se iz baze i iz Redisa.`)) return;
+    setError(null);
+    setDeleting(true);
+    try {
+      await deleteDocument(doc.id);
+      load();
+    } catch (err) {
+      setError(extractError(err));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const removeAll = async () => {
+    if (!window.confirm(`Obrisati SVE dokumente (${docs.length})? Baza i Redis indeksi će biti prazni.`)) {
+      return;
+    }
+    setError(null);
+    setDeleting(true);
+    try {
+      await deleteAllDocuments();
+      load();
+    } catch (err) {
+      setError(extractError(err));
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -25,10 +72,24 @@ export default function DocumentsPage() {
           <h1 className="text-2xl font-bold">Dokumenti</h1>
           <p className="text-muted-foreground">Svi uploadovani dokumenti i njihov status</p>
         </div>
-        <Link href="/upload">
-          <Button>+ Upload</Button>
-        </Link>
+        <div className="flex gap-2">
+          {docs.length > 0 && (
+            <Button variant="outline" onClick={removeAll} disabled={deleting}>
+              <Trash2 className="mr-1 h-4 w-4 text-red-600" />
+              Obriši sve
+            </Button>
+          )}
+          <Link href="/upload">
+            <Button>+ Upload</Button>
+          </Link>
+        </div>
       </div>
+
+      {error && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       {loading && <p className="text-muted-foreground">Učitavam...</p>}
       {!loading && docs.length === 0 && (
@@ -47,10 +108,22 @@ export default function DocumentsPage() {
                     <p className="text-xs text-muted-foreground">
                       {doc.fileType.toUpperCase()} · {(doc.fileSize / 1024).toFixed(1)} KB ·{' '}
                       {doc.chunkCount} chunkova
+                      {doc.embeddingModel && <> · {doc.embeddingModel}</>}
                     </p>
                   </div>
                 </div>
-                {statusBadge(doc.status)}
+                <div className="flex shrink-0 items-center gap-2">
+                  {statusBadge(doc.status)}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => remove(e, doc)}
+                    disabled={deleting}
+                    aria-label={`Obriši ${doc.name}`}
+                  >
+                    <Trash2 className="h-4 w-4 text-red-600" />
+                  </Button>
+                </div>
               </CardHeader>
             </Card>
           </Link>

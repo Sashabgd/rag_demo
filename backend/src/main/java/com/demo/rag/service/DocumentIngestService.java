@@ -4,6 +4,7 @@ import com.demo.rag.chunk.StaticSplitter;
 import com.demo.rag.chunk.TextChunk;
 import com.demo.rag.dto.EmbedRequest;
 import com.demo.rag.dto.EmbedResponse;
+import com.demo.rag.dto.EmbeddingConfig;
 import com.demo.rag.entity.ChunkStatus;
 import com.demo.rag.entity.Document;
 import com.demo.rag.entity.DocumentChunk;
@@ -32,6 +33,7 @@ public class DocumentIngestService {
     private final DocumentChunkRepository chunkRepository;
     private final DocumentParser documentParser;
     private final EmbeddingClient embeddingClient;
+    private final EmbeddingModelService embeddingModelService;
 
     @Async("ingestExecutor")
     public void processDocumentAsync(Long documentId, byte[] fileBytes, String extension) {
@@ -77,7 +79,12 @@ public class DocumentIngestService {
         documentRepository.saveAndFlush(doc);
         log.info("Document {} chunked into {} parts", documentId, chunkEntities.size());
 
-        // Step 4: Embed
+        // Step 4: Embed (index is recorded before the call so a partial embed can still be deleted)
+        EmbeddingConfig embeddingConfig = embeddingModelService.resolveActive();
+        doc.setEmbeddingModel(embeddingConfig.label());
+        doc.setEmbeddingIndex(embeddingConfig.indexName());
+        documentRepository.saveAndFlush(doc);
+
         List<EmbedRequest.EmbedDocumentItem> embedItems = chunkEntities.stream().map(chunk -> {
             Map<String, Object> metadata = new HashMap<>();
             metadata.put("document_id", documentId);
@@ -88,7 +95,7 @@ public class DocumentIngestService {
             return new EmbedRequest.EmbedDocumentItem(chunk.getId(), chunk.getContent(), metadata);
         }).toList();
 
-        EmbedResponse embedResponse = embeddingClient.embed(new EmbedRequest(embedItems));
+        EmbedResponse embedResponse = embeddingClient.embed(new EmbedRequest(embedItems, embeddingConfig));
         if (embedResponse != null && embedResponse.ids() != null) {
             for (EmbedResponse.EmbedIdMapping mapping : embedResponse.ids()) {
                 chunkRepository.findById(mapping.chunkId()).ifPresent(chunk -> {

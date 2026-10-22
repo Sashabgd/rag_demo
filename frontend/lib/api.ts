@@ -5,6 +5,13 @@ export const httpClient = axios.create({
   timeout: 10 * 60 * 1000,
 });
 
+export function extractError(e: unknown): string {
+  if (axios.isAxiosError(e)) {
+    return (e.response?.data as { error?: string } | undefined)?.error || e.message;
+  }
+  return e instanceof Error ? e.message : 'Nepoznata greška';
+}
+
 export type DocumentStatus = 'UPLOADED' | 'PARSED' | 'CHUNKED' | 'EMBEDDED' | 'FAILED';
 
 export interface DocumentSummary {
@@ -15,6 +22,7 @@ export interface DocumentSummary {
   status: DocumentStatus;
   uploadedAt: string;
   chunkCount: number;
+  embeddingModel: string | null;
 }
 
 export interface ChunkDto {
@@ -36,6 +44,8 @@ export interface DocumentDetail {
   parsedAt: string | null;
   chunkedAt: string | null;
   embeddedAt: string | null;
+  embeddingModel: string | null;
+  embeddingIndex: string | null;
   textLength: number | null;
   textPreview: string | null;
   chunks: ChunkDto[];
@@ -76,6 +86,14 @@ export async function listDocuments(): Promise<DocumentSummary[]> {
 export async function getDocument(id: number): Promise<DocumentDetail> {
   const res = await httpClient.get<DocumentDetail>(`/api/documents/${id}`);
   return res.data;
+}
+
+export async function deleteDocument(id: number): Promise<void> {
+  await httpClient.delete(`/api/documents/${id}`);
+}
+
+export async function deleteAllDocuments(): Promise<void> {
+  await httpClient.delete('/api/documents');
 }
 
 export async function searchDocuments(
@@ -123,4 +141,50 @@ export async function updateModel(id: number, input: CustomModelInput): Promise<
 
 export async function deleteModel(id: number): Promise<void> {
   await httpClient.delete(`/api/models/${id}`);
+}
+
+export interface EmbeddingModel {
+  id: number;
+  name: string;
+  baseUrl: string;
+  modelName: string;
+  hasApiKey: boolean;
+  active: boolean;
+  indexName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmbeddingModelInput {
+  name: string;
+  baseUrl: string;
+  modelName: string;
+  apiKey?: string;
+}
+
+export async function listEmbeddingModels(): Promise<EmbeddingModel[]> {
+  const res = await httpClient.get<EmbeddingModel[]>('/api/embedding-models');
+  return res.data;
+}
+
+export async function createEmbeddingModel(input: EmbeddingModelInput): Promise<EmbeddingModel> {
+  const res = await httpClient.post<EmbeddingModel>('/api/embedding-models', input);
+  return res.data;
+}
+
+export async function updateEmbeddingModel(
+  id: number,
+  input: EmbeddingModelInput,
+): Promise<EmbeddingModel> {
+  const res = await httpClient.put<EmbeddingModel>(`/api/embedding-models/${id}`, input);
+  return res.data;
+}
+
+export async function deleteEmbeddingModel(id: number): Promise<void> {
+  await httpClient.delete(`/api/embedding-models/${id}`);
+}
+
+/** null switches back to the local e5-small model. */
+export async function setActiveEmbeddingModel(id: number | null): Promise<void> {
+  await httpClient.put('/api/embedding-models/active', { id });
 }

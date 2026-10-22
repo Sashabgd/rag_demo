@@ -14,6 +14,8 @@ public record DocumentDetailDto(
         Instant parsedAt,
         Instant chunkedAt,
         Instant embeddedAt,
+        String embeddingModel,
+        String embeddingIndex,
         Integer textLength,
         String textPreview,
         List<ChunkDto> chunks
